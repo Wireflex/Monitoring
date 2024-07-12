@@ -1,0 +1,122 @@
+volumes:
+  grafana-data:
+  postgres-data: {}
+  vmdata: {}
+  vldata: {}
+
+services:
+  grafana:
+    image: grafana/grafana:11.0.0
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+  loki:
+    image: grafana/loki:2.9.8
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki.yml:/etc/loki/loki.yml
+    command:
+     ' --config.file=/etc/loki/loki.yml'
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    ports:
+      - "9080:9080"
+    volumes:
+      - ./promtail.yml:/etc/promtail/promtail.yml
+      - /var/log:/var/log
+    command:
+      '--config.file=/etc/promtail/promtail.yml'
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    ports:
+      - '9090:9090'
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+       '--config.file=/etc/prometheus/prometheus.yml'
+
+  node_exporter:
+    image: prom/node-exporter:v1.8.1
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+    
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    privileged: true
+
+  postgres-exporter:
+    image: wrouesnel/postgres_exporter:latest
+    restart: unless-stopped
+    environment:
+      #- DATA_SOURCE_NAME=postgresql://postgres:password@postgres-db:5432/postgres?sslmode=disable
+      - DATA_SOURCE_URI=postgres-db:5432/postgres?sslmode=disable
+      - DATA_SOURCE_USER=postgres
+      - DATA_SOURCE_PASS=password
+    ports:
+      - "9187:9187"
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: test_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  pg-admin:
+    image: dpage/pgadmin4:6
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@email.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_LISTEN_PORT: 5050
+    ports:
+      - "5050:5050"
+    restart: unless-stopped
+
+  victorialogs:
+    container_name: victorialogs
+    image: docker.io/victoriametrics/victoria-logs:v0.27.1-victorialogs
+    command:
+      - "--storageDataPath=/vlogs"
+      - "--httpListenAddr=:9428"
+    volumes:
+      - vldata:/vlogs
+    ports:
+      - "9428:9428"
+    restart: unless-stopped
+
+  victoriametrics:
+    container_name: victoriametrics
+    image: victoriametrics/victoria-metrics:v1.101.0
+    ports:
+      - 8428:8428
+    volumes:
+      - vmdata:/storage
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - "--storageDataPath=/storage"
+      - "--httpListenAddr=:8428"
+      - "--promscrape.config=/etc/prometheus/prometheus.yml"
+    restart: unless-stopped
